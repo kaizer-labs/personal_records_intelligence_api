@@ -263,6 +263,60 @@ class LibraryService:
 
         return self._backfill_missing_embeddings(records)
 
+    def remove_document(self, document_id: str) -> FolderListResponse:
+        row = self._database.fetchone(
+            """
+            SELECT
+                documents.id,
+                documents.folder_id,
+                documents.storage_path
+            FROM documents
+            WHERE documents.id = ?
+            """,
+            [document_id],
+        )
+        if row is None:
+            return self.list_folders()
+
+        _, folder_id, storage_path = row
+        self._delete_document_record(
+            document_id=str(document_id),
+            storage_path=str(storage_path),
+        )
+        self._prune_empty_folder(str(folder_id))
+        return self.list_folders()
+
+    def clear_folder(self, folder_name: str) -> FolderListResponse:
+        row = self._database.fetchone(
+            """
+            SELECT id
+            FROM folders
+            WHERE name = ?
+            """,
+            [folder_name],
+        )
+        if row is None:
+            return self.list_folders()
+
+        folder_id = str(row[0])
+        document_rows = self._database.fetchall(
+            """
+            SELECT id, storage_path
+            FROM documents
+            WHERE folder_id = ?
+            """,
+            [folder_id],
+        )
+
+        for document_id, storage_path in document_rows:
+            self._delete_document_record(
+                document_id=str(document_id),
+                storage_path=str(storage_path),
+            )
+
+        self._database.execute("DELETE FROM folders WHERE id = ?", [folder_id])
+        return self.list_folders()
+
     def _sync_folder_batch(
         self,
         *,
@@ -507,22 +561,10 @@ class LibraryService:
             if str(relative_path) in active_set:
                 continue
 
-            self._database.execute(
-                """
-                DELETE FROM chunk_embeddings
-                WHERE chunk_id IN (
-                    SELECT id
-                    FROM chunks
-                    WHERE document_id = ?
-                )
-                """,
-                [str(document_id)],
+            self._delete_document_record(
+                document_id=str(document_id),
+                storage_path=str(storage_path),
             )
-            self._database.execute("DELETE FROM chunks WHERE document_id = ?", [str(document_id)])
-            self._database.execute("DELETE FROM documents WHERE id = ?", [str(document_id)])
-            stored_file = Path(str(storage_path))
-            if stored_file.exists():
-                stored_file.unlink()
 
     def _extract_text(self, file: IngestFile) -> str:
         extension = Path(file.filename).suffix.lower()
@@ -634,6 +676,41 @@ class LibraryService:
             )
             for record in records
         ]
+
+    def _delete_document_record(self, *, document_id: str, storage_path: str) -> None:
+        self._database.execute(
+            """
+            DELETE FROM chunk_embeddings
+            WHERE chunk_id IN (
+                SELECT id
+                FROM chunks
+                WHERE document_id = ?
+            )
+            """,
+            [document_id],
+        )
+        self._database.execute("DELETE FROM chunks WHERE document_id = ?", [document_id])
+        self._database.execute("DELETE FROM documents WHERE id = ?", [document_id])
+
+        stored_file = Path(storage_path)
+        if stored_file.exists():
+            stored_file.unlink()
+
+        parent_dir = stored_file.parent
+        if parent_dir.exists():
+            try:
+                parent_dir.rmdir()
+            except OSError:
+                pass
+
+    def _prune_empty_folder(self, folder_id: str) -> None:
+        document_count = self._database.fetchone(
+            "SELECT COUNT(*) FROM documents WHERE folder_id = ?",
+            [folder_id],
+        )
+        count = int(document_count[0]) if document_count else 0
+        if count == 0:
+            self._database.execute("DELETE FROM folders WHERE id = ?", [folder_id])
 
     def _slugify(self, value: str) -> str:
         normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip()).strip("-").lower()

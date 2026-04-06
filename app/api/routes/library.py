@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, File, Request, UploadFile
+from urllib.parse import unquote
 
 from app.schemas.library import FolderListResponse, FolderSyncResponse
 from app.services.library import IngestFile
@@ -37,3 +38,13 @@ async def upload_folder(
         )
 
     return request.app.state.library_service.sync_browser_uploads(ingest_files)
+
+
+@router.delete("/documents/{document_id}", response_model=FolderListResponse)
+async def delete_document(document_id: str, request: Request) -> FolderListResponse:
+    return request.app.state.library_service.remove_document(document_id)
+
+
+@router.delete("/folders/{folder_name}", response_model=FolderListResponse)
+async def clear_folder(folder_name: str, request: Request) -> FolderListResponse:
+    return request.app.state.library_service.clear_folder(unquote(folder_name))
