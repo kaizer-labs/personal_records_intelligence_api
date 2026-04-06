@@ -15,12 +15,46 @@ CREATE TABLE IF NOT EXISTS app_metadata (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS folders (
+    id VARCHAR PRIMARY KEY,
+    name VARCHAR UNIQUE NOT NULL,
+    origin VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS documents (
+    id VARCHAR PRIMARY KEY,
+    folder_id VARCHAR NOT NULL,
+    filename VARCHAR NOT NULL,
+    relative_path VARCHAR NOT NULL,
+    storage_path VARCHAR NOT NULL,
+    media_type VARCHAR NOT NULL,
+    sha256 VARCHAR NOT NULL,
+    extracted_text VARCHAR NOT NULL,
+    char_count INTEGER NOT NULL DEFAULT 0,
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(folder_id, relative_path)
+);
+
+CREATE TABLE IF NOT EXISTS chunks (
+    id VARCHAR PRIMARY KEY,
+    document_id VARCHAR NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    text VARCHAR NOT NULL,
+    token_estimate INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(document_id, chunk_index)
+);
+
 DELETE FROM app_metadata WHERE key IN ('bootstrap_status', 'schema_version');
 
 INSERT INTO app_metadata (key, value)
 VALUES
     ('bootstrap_status', 'ready'),
-    ('schema_version', '1');
+    ('schema_version', '2');
 """
 
 
@@ -65,6 +99,26 @@ class DatabaseManager:
             path=str(self.database_path),
             table_count=int(table_count[0]) if table_count else 0,
         )
+
+    def execute(self, query: str, params: list[object] | None = None) -> None:
+        with self._lock:
+            self.connection.execute(query, params or [])
+
+    def fetchone(
+        self,
+        query: str,
+        params: list[object] | None = None,
+    ) -> tuple[object, ...] | None:
+        with self._lock:
+            return self.connection.execute(query, params or []).fetchone()
+
+    def fetchall(
+        self,
+        query: str,
+        params: list[object] | None = None,
+    ) -> list[tuple[object, ...]]:
+        with self._lock:
+            return self.connection.execute(query, params or []).fetchall()
 
     def close(self) -> None:
         with self._lock:

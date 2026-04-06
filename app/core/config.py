@@ -14,6 +14,12 @@ class Settings:
     app_env: str
     cors_origins: list[str]
     duckdb_path: str
+    storage_root: str
+    examples_path: str
+    ollama_base_url: str
+    ollama_chat_model: str
+    ollama_embedding_model: str
+    ollama_chat_num_ctx: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -25,6 +31,16 @@ class Settings:
                 os.getenv("CORS_ORIGINS", "http://localhost:5173")
             ),
             duckdb_path=os.getenv("DUCKDB_PATH", "/app/data/duckdb/app.duckdb"),
+            storage_root=os.getenv("STORAGE_ROOT", "/app/data/library"),
+            examples_path=os.getenv("EXAMPLES_PATH", "/app/examples"),
+            ollama_base_url=os.getenv(
+                "OLLAMA_BASE_URL", "http://host.docker.internal:11434"
+            ),
+            ollama_chat_model=os.getenv("OLLAMA_CHAT_MODEL", "qwen2.5:7b"),
+            ollama_embedding_model=os.getenv(
+                "OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"
+            ),
+            ollama_chat_num_ctx=int(os.getenv("OLLAMA_CHAT_NUM_CTX", "4096")),
         )
 
 

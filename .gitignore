@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 *.pyc
 data/
+examples/*
+!examples/README.md

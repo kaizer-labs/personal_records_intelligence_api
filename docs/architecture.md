@@ -13,7 +13,8 @@ If your Markdown viewer does not render Mermaid, the SVG fallback images below s
 - User model: single-user, single-machine, no sync
 - Database: DuckDB embedded in the backend container on a mounted volume
 - Model runtime: Ollama running natively on the Mac host
-- Fixed model for MVP: `gemma4:26b`
+- Default local chat model for MVP: `qwen2.5:7b`
+- Default local embedding model for MVP: `nomic-embed-text`
 - Retrieval scope: generalized document search across supported file types
 - Computation scope: deterministic calculations only when typed facts can be extracted with enough confidence
 
@@ -226,5 +227,5 @@ This gives the system a generalized way to support calculations across multiple 
 - OCR-heavy workflows
 - multi-user sync
 - cloud vector stores
-- model abstraction beyond `gemma4:26b`
+- model abstraction beyond the initial local defaults
 - automatic desktop packaging

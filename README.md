@@ -2,6 +2,18 @@
 
 FastAPI backend for the Personal Records Intelligence MVP.
 
+## Local Model Defaults
+
+- chat model: `qwen2.5:7b`
+- embedding model: `nomic-embed-text`
+- Ollama base URL from Docker: `http://host.docker.internal:11434`
+- recommended chat context on this Mac: `4096`
+
+## Local Examples
+
+The `examples/` folder is intended for local-only sample documents and is not
+committed to the public repository.
+
 ## Setup
 
 From inside this repo:
@@ -24,6 +36,7 @@ UI:
 
 - `GET /health_check`
 - embedded DuckDB setup with startup initialization
+- Ollama configuration for local generation and embeddings
 - OpenAPI docs at `/docs`
 - Dockerfile for local containerized development
 - `docker-compose.yml` for API-local orchestration of backend plus sibling UI

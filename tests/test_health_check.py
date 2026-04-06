@@ -18,3 +18,7 @@ def test_health_check_returns_ok() -> None:
     assert payload["database"]["engine"] == "duckdb"
     assert payload["database"]["path"]
     assert payload["database"]["table_count"] >= 1
+    assert payload["ollama"]["base_url"] == "http://host.docker.internal:11434"
+    assert payload["ollama"]["chat_model"] == "qwen2.5:7b"
+    assert payload["ollama"]["embedding_model"] == "nomic-embed-text"
+    assert payload["ollama"]["chat_num_ctx"] == 4096

@@ -15,4 +15,10 @@ async def health_check(request: Request) -> HealthCheckResponse:
         version=settings.app_version,
         environment=settings.app_env,
         database=database.health(),
+        ollama={
+            "base_url": settings.ollama_base_url,
+            "chat_model": settings.ollama_chat_model,
+            "embedding_model": settings.ollama_embedding_model,
+            "chat_num_ctx": settings.ollama_chat_num_ctx,
+        },
     )

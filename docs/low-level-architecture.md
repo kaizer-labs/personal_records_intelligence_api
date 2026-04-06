@@ -634,8 +634,9 @@ This keeps DuckDB usage simple and avoids turning MVP into a distributed system.
 Minimum backend environment variables:
 
 - `OLLAMA_BASE_URL=http://host.docker.internal:11434`
-- `OLLAMA_CHAT_MODEL=gemma4:26b`
-- `OLLAMA_EMBED_MODEL=<fixed embedding model>`
+- `OLLAMA_CHAT_MODEL=qwen2.5:7b`
+- `OLLAMA_EMBEDDING_MODEL=nomic-embed-text`
+- `OLLAMA_CHAT_NUM_CTX=4096`
 - `DUCKDB_PATH=/app/data/duckdb/app.duckdb`
 - `ARTIFACTS_DIR=/app/data`
 - `MAX_BATCH_FILES=25`

@@ -11,9 +11,17 @@ class DatabaseHealthResponse(BaseModel):
     table_count: int
 
 
+class OllamaHealthResponse(BaseModel):
+    base_url: str
+    chat_model: str
+    embedding_model: str
+    chat_num_ctx: int
+
+
 class HealthCheckResponse(BaseModel):
     status: Literal["ok"]
     service: str
     version: str
     environment: str
     database: DatabaseHealthResponse
+    ollama: OllamaHealthResponse
