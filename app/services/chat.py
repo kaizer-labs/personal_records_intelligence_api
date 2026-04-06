@@ -3,19 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.schemas.chat import ChatResponse, ChatSource
-from app.services.library import LibraryService
-from app.services.ollama import OllamaClient
-from app.services.text_processing import build_excerpt, score_text
+from app.services.library import ChunkRecord, LibraryService
+from app.services.ollama import OllamaClient, OllamaServiceError
+from app.services.text_processing import build_excerpt, cosine_similarity, score_text
 
 
-@dataclass(frozen=True)
+@dataclass
 class RankedChunk:
+    chunk_id: str
     document_id: str
     folder_name: str
     document_name: str
     relative_path: str
     text: str
     score: float
+    lexical_score: float
+    semantic_score: float
 
 
 class ChatService:
@@ -98,18 +101,17 @@ class ChatService:
         self,
         *,
         question: str,
-        chunks: list[tuple[str, str, str, str, str, int]],
+        chunks: list[ChunkRecord],
     ) -> list[RankedChunk]:
+        query_embedding: list[float] | None = None
+        try:
+            query_embedding = self._ollama_client.embed_text(question)
+        except OllamaServiceError:
+            query_embedding = None
+
         ranked = [
-            RankedChunk(
-                document_id=document_id,
-                folder_name=folder_name,
-                document_name=document_name,
-                relative_path=relative_path,
-                text=text,
-                score=score_text(question, f"{document_name}\n{relative_path}\n{text}") + max(0.0, 1.0 - (chunk_index * 0.05)),
-            )
-            for document_id, folder_name, document_name, relative_path, text, chunk_index in chunks
+            self._build_ranked_chunk(question=question, chunk=chunk, query_embedding=query_embedding)
+            for chunk in chunks
         ]
 
         ranked.sort(key=lambda item: item.score, reverse=True)
@@ -118,3 +120,34 @@ class ChatService:
             return positive_matches
 
         return ranked[:4]
+
+    def _build_ranked_chunk(
+        self,
+        *,
+        question: str,
+        chunk: ChunkRecord,
+        query_embedding: list[float] | None,
+    ) -> RankedChunk:
+        lexical_score = score_text(
+            question,
+            f"{chunk.document_name}\n{chunk.relative_path}\n{chunk.text}",
+        ) + max(0.0, 1.0 - (chunk.chunk_index * 0.05))
+        semantic_score = (
+            cosine_similarity(query_embedding, chunk.embedding)
+            if query_embedding and chunk.embedding
+            else 0.0
+        )
+        lexical_component = min(lexical_score / 8.0, 1.5)
+        semantic_component = max(semantic_score, 0.0) * 4.5
+
+        return RankedChunk(
+            chunk_id=chunk.chunk_id,
+            document_id=chunk.document_id,
+            folder_name=chunk.folder_name,
+            document_name=chunk.document_name,
+            relative_path=chunk.relative_path,
+            text=chunk.text,
+            score=lexical_component + semantic_component,
+            lexical_score=lexical_score,
+            semantic_score=semantic_score,
+        )

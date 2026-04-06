@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
@@ -19,6 +19,7 @@ from app.schemas.library import (
     FolderSyncResponse,
     ProcessedFileResult,
 )
+from app.services.ollama import OllamaClient, OllamaServiceError
 from app.services.text_processing import chunk_text, normalize_text
 
 
@@ -39,15 +40,30 @@ class IngestFile:
     data: bytes
 
 
+@dataclass(frozen=True)
+class ChunkRecord:
+    chunk_id: str
+    document_id: str
+    folder_name: str
+    document_name: str
+    relative_path: str
+    text: str
+    chunk_index: int
+    embedding: list[float] | None
+    embedding_model: str | None
+
+
 class LibraryService:
     def __init__(
         self,
         database: DatabaseManager,
+        ollama_client: OllamaClient,
         *,
         storage_root: str,
         examples_root: str,
     ) -> None:
         self._database = database
+        self._ollama_client = ollama_client
         self._storage_root = Path(storage_root)
         self._examples_root = Path(examples_root)
 
@@ -177,54 +193,75 @@ class LibraryService:
         self,
         *,
         folder_names: list[str] | None = None,
-    ) -> list[tuple[str, str, str, str, str, int]]:
+    ) -> list[ChunkRecord]:
+        params: list[object] = [self._ollama_client.embedding_model]
+
         if folder_names:
             placeholders = ",".join(["?"] * len(folder_names))
+            params.extend(folder_names)
             rows = self._database.fetchall(
                 f"""
                 SELECT
+                    chunks.id,
                     documents.id,
                     folders.name,
                     documents.filename,
                     documents.relative_path,
                     chunks.text,
-                    chunks.chunk_index
+                    chunks.chunk_index,
+                    chunk_embeddings.embedding_json,
+                    chunk_embeddings.embedding_model
                 FROM chunks
                 INNER JOIN documents ON documents.id = chunks.document_id
                 INNER JOIN folders ON folders.id = documents.folder_id
+                LEFT JOIN chunk_embeddings
+                    ON chunk_embeddings.chunk_id = chunks.id
+                    AND chunk_embeddings.embedding_model = ?
                 WHERE folders.name IN ({placeholders})
                 ORDER BY folders.name ASC, documents.relative_path ASC, chunks.chunk_index ASC
                 """,
-                list(folder_names),
+                params,
             )
         else:
             rows = self._database.fetchall(
                 """
                 SELECT
+                    chunks.id,
                     documents.id,
                     folders.name,
                     documents.filename,
                     documents.relative_path,
                     chunks.text,
-                    chunks.chunk_index
+                    chunks.chunk_index,
+                    chunk_embeddings.embedding_json,
+                    chunk_embeddings.embedding_model
                 FROM chunks
                 INNER JOIN documents ON documents.id = chunks.document_id
                 INNER JOIN folders ON folders.id = documents.folder_id
+                LEFT JOIN chunk_embeddings
+                    ON chunk_embeddings.chunk_id = chunks.id
+                    AND chunk_embeddings.embedding_model = ?
                 ORDER BY folders.name ASC, documents.relative_path ASC, chunks.chunk_index ASC
-                """
+                """,
+                params,
             )
 
-        return [
-            (
-                str(row[0]),
-                str(row[1]),
-                str(row[2]),
-                str(row[3]),
-                str(row[4]),
-                int(row[5]),
+        records = [
+            ChunkRecord(
+                chunk_id=str(row[0]),
+                document_id=str(row[1]),
+                folder_name=str(row[2]),
+                document_name=str(row[3]),
+                relative_path=str(row[4]),
+                text=str(row[5]),
+                chunk_index=int(row[6]),
+                embedding=json.loads(str(row[7])) if row[7] else None,
+                embedding_model=str(row[8]) if row[8] else None,
             )
             for row in rows
         ]
+
+        return self._backfill_missing_embeddings(records)
 
     def _sync_folder_batch(
         self,
@@ -365,6 +402,17 @@ class LibraryService:
         if existing:
             self._database.execute(
                 """
+                DELETE FROM chunk_embeddings
+                WHERE chunk_id IN (
+                    SELECT id
+                    FROM chunks
+                    WHERE document_id = ?
+                )
+                """,
+                [document_id],
+            )
+            self._database.execute(
+                """
                 UPDATE documents
                 SET
                     filename = ?,
@@ -422,20 +470,25 @@ class LibraryService:
             )
 
         self._database.execute("DELETE FROM chunks WHERE document_id = ?", [document_id])
+        chunk_records: list[tuple[str, str]] = []
         for index, chunk in enumerate(chunks):
+            chunk_id = str(uuid4())
             self._database.execute(
                 """
                 INSERT INTO chunks (id, document_id, chunk_index, text, token_estimate)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 [
-                    str(uuid4()),
+                    chunk_id,
                     document_id,
                     index,
                     chunk,
                     max(1, len(chunk.split())),
                 ],
             )
+            chunk_records.append((chunk_id, chunk))
+
+        self._store_chunk_embeddings(chunk_records)
 
         return document_id
 
@@ -454,6 +507,17 @@ class LibraryService:
             if str(relative_path) in active_set:
                 continue
 
+            self._database.execute(
+                """
+                DELETE FROM chunk_embeddings
+                WHERE chunk_id IN (
+                    SELECT id
+                    FROM chunks
+                    WHERE document_id = ?
+                )
+                """,
+                [str(document_id)],
+            )
             self._database.execute("DELETE FROM chunks WHERE document_id = ?", [str(document_id)])
             self._database.execute("DELETE FROM documents WHERE id = ?", [str(document_id)])
             stored_file = Path(str(storage_path))
@@ -492,6 +556,84 @@ class LibraryService:
         target_path = target_dir / f"{safe_filename}{extension}"
         target_path.write_bytes(data)
         return str(target_path)
+
+    def _store_chunk_embeddings(self, chunk_records: list[tuple[str, str]]) -> None:
+        if not chunk_records:
+            return
+
+        try:
+            embeddings = self._ollama_client.embed_texts(
+                [chunk_text for _, chunk_text in chunk_records]
+            )
+        except OllamaServiceError:
+            return
+
+        for (chunk_id, _), embedding in zip(chunk_records, embeddings, strict=False):
+            self._database.execute(
+                """
+                INSERT OR REPLACE INTO chunk_embeddings (
+                    chunk_id,
+                    embedding_model,
+                    embedding_dimension,
+                    embedding_json,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                [
+                    chunk_id,
+                    self._ollama_client.embedding_model,
+                    len(embedding),
+                    json.dumps(embedding),
+                ],
+            )
+
+    def _backfill_missing_embeddings(self, records: list[ChunkRecord]) -> list[ChunkRecord]:
+        missing_records = [record for record in records if record.embedding is None]
+        if not missing_records:
+            return records
+
+        try:
+            embeddings = self._ollama_client.embed_texts(
+                [record.text for record in missing_records]
+            )
+        except OllamaServiceError:
+            return records
+
+        embeddings_by_chunk_id: dict[str, list[float]] = {}
+        for record, embedding in zip(missing_records, embeddings, strict=False):
+            embeddings_by_chunk_id[record.chunk_id] = embedding
+            self._database.execute(
+                """
+                INSERT OR REPLACE INTO chunk_embeddings (
+                    chunk_id,
+                    embedding_model,
+                    embedding_dimension,
+                    embedding_json,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                [
+                    record.chunk_id,
+                    self._ollama_client.embedding_model,
+                    len(embedding),
+                    json.dumps(embedding),
+                ],
+            )
+
+        return [
+            replace(
+                record,
+                embedding=embeddings_by_chunk_id.get(record.chunk_id, record.embedding),
+                embedding_model=(
+                    self._ollama_client.embedding_model
+                    if record.chunk_id in embeddings_by_chunk_id
+                    else record.embedding_model
+                ),
+            )
+            for record in records
+        ]
 
     def _slugify(self, value: str) -> str:
         normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip()).strip("-").lower()

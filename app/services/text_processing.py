@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import math
 import re
 
 
@@ -150,3 +151,17 @@ def build_excerpt(text: str, query: str, max_chars: int = 240) -> str:
             return f"{prefix}{excerpt}{suffix}"
 
     return f"{candidate_text[:max_chars].strip()}..."
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+
+    numerator = sum(left_value * right_value for left_value, right_value in zip(left, right))
+    left_magnitude = math.sqrt(sum(value * value for value in left))
+    right_magnitude = math.sqrt(sum(value * value for value in right))
+
+    if left_magnitude == 0.0 or right_magnitude == 0.0:
+        return 0.0
+
+    return numerator / (left_magnitude * right_magnitude)

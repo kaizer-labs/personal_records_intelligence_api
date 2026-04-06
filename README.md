@@ -8,6 +8,7 @@ FastAPI backend for the Personal Records Intelligence MVP.
 - embedding model: `nomic-embed-text`
 - Ollama base URL from Docker: `http://host.docker.internal:11434`
 - recommended chat context on this Mac: `4096`
+- semantic retrieval activates once `nomic-embed-text` is pulled locally
 
 ## Local Examples
 

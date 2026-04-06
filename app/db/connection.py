@@ -49,12 +49,22 @@ CREATE TABLE IF NOT EXISTS chunks (
     UNIQUE(document_id, chunk_index)
 );
 
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
+    chunk_id VARCHAR NOT NULL,
+    embedding_model VARCHAR NOT NULL,
+    embedding_dimension INTEGER NOT NULL,
+    embedding_json VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (chunk_id, embedding_model)
+);
+
 DELETE FROM app_metadata WHERE key IN ('bootstrap_status', 'schema_version');
 
 INSERT INTO app_metadata (key, value)
 VALUES
     ('bootstrap_status', 'ready'),
-    ('schema_version', '2');
+    ('schema_version', '3');
 """
 
 

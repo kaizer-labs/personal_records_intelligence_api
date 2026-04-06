@@ -16,14 +16,17 @@ async def lifespan(app: FastAPI):
     database = DatabaseManager(settings.duckdb_path)
     database.connect()
     app.state.db = database
+    ollama_client = OllamaClient(settings)
+    app.state.ollama_client = ollama_client
     app.state.library_service = LibraryService(
         database,
+        ollama_client,
         storage_root=settings.storage_root,
         examples_root=settings.examples_path,
     )
     app.state.chat_service = ChatService(
         app.state.library_service,
-        OllamaClient(settings),
+        ollama_client,
     )
 
     try:
