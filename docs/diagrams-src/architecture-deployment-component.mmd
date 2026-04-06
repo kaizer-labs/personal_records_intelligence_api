@@ -1,0 +1,47 @@
+flowchart LR
+    user["User"]
+    browser["Browser (Chromium-first)"]
+
+    subgraph host["Mac Host"]
+        docs["User Documents"]
+        ollama["Ollama (native host)\nGemma4 26B"]
+
+        subgraph compose["Docker Compose"]
+            fe["Frontend\nReact + Vite"]
+
+            subgraph api_box["Backend Container"]
+                api["FastAPI API"]
+                ingest["Ingestion Pipeline"]
+                retrieve["Retrieval Service"]
+                extract["Extraction + Fact Normalization"]
+                calc["Deterministic Calculator"]
+                answer["Answer Orchestrator"]
+                db[("DuckDB file")]
+                cache["Artifacts Cache"]
+            end
+        end
+    end
+
+    user --> browser
+    browser -->|"Loads UI"| fe
+    fe <-->|"REST / SSE"| api
+    browser -->|"Selects folders/files"| docs
+    browser -->|"Streams file blobs + metadata"| api
+
+    api --> ingest
+    api --> retrieve
+    api --> extract
+    api --> calc
+    api --> answer
+
+    ingest --> db
+    retrieve --> db
+    extract --> db
+    calc --> db
+    answer --> db
+
+    ingest --> cache
+    extract --> cache
+
+    api -->|"Embeddings + answer generation"| ollama
+    answer -->|"Grounded response assembly"| ollama

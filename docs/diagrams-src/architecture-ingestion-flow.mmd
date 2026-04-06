@@ -1,0 +1,21 @@
+sequenceDiagram
+    actor U as User
+    participant B as Browser UI
+    participant API as FastAPI
+    participant ING as Ingestion Pipeline
+    participant O as Ollama
+    participant DB as DuckDB
+
+    U->>B: Select folders or files
+    B->>API: Upload file blobs + client metadata
+    API->>ING: Start ingestion job
+    ING->>ING: Validate file type and checksum
+    ING->>ING: Extract text and provenance
+    ING->>ING: Chunk content
+    ING->>O: Generate embeddings
+    O-->>ING: Embedding vectors
+    ING->>DB: Store document, chunks, embeddings, status
+    ING->>ING: Classify document type if possible
+    ING->>ING: Extract records and normalize facts
+    ING->>DB: Store extracted_records and facts with provenance
+    API-->>B: Return indexing progress, successes, and failures

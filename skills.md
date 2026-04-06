@@ -9,9 +9,10 @@ Build a trustworthy local-first API for document ingestion, retrieval, fact extr
 ## Read These First
 
 1. `README.md`
-2. `app/main.py`
-3. `app/api/routes/health.py`
-4. `app/db/connection.py`
+2. `docs/api-contract.md`
+3. `docs/development-workflow.md`
+4. `docs/architecture.md`
+5. `docs/low-level-architecture.md`
 
 ## Current Constraints
 
@@ -19,7 +20,7 @@ Build a trustworthy local-first API for document ingestion, retrieval, fact extr
 - local-first architecture
 - FastAPI backend
 - DuckDB embedded in the backend process
-- Dockerfile-based local development
+- Docker-based local development
 - health endpoint exists at `GET /health_check`
 - frontend lives in a separate sibling folder and connects over HTTP
 
@@ -30,7 +31,7 @@ Build a trustworthy local-first API for document ingestion, retrieval, fact extr
 - put business logic in services, not routers
 - use explicit response models
 - prefer additive changes over broad refactors
-- update repository docs when setup or contracts change
+- update markdown docs when architecture or contracts change
 
 ## File Ownership Guidance
 

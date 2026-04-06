@@ -1,0 +1,20 @@
+flowchart LR
+    q["Incoming Question"]
+    qc["Query Classifier"]
+    rs["Retrieval Service"]
+    eb["Evidence Builder"]
+    dec{"Enough trusted facts for deterministic path?"}
+    calc["Calculator"]
+    compose["Answer Composer"]
+    validate["Response Validator"]
+    out["Final Response"]
+
+    q --> qc
+    qc --> rs
+    rs --> eb
+    eb --> dec
+    dec -->|"yes"| calc
+    dec -->|"no"| compose
+    calc --> compose
+    compose --> validate
+    validate --> out

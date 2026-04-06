@@ -1,0 +1,65 @@
+flowchart TB
+    subgraph browser["Browser"]
+        ui_shell["App Shell"]
+        setup_ui["Setup + Folder Picker"]
+        ingest_ui["Ingestion Dashboard"]
+        query_ui["Query Workspace"]
+        evidence_ui["Evidence Drawer"]
+        settings_ui["Settings"]
+        upload_mgr["Upload Manager"]
+    end
+
+    subgraph backend["FastAPI Container"]
+        router_ingest["Ingestion Router"]
+        router_query["Query Router"]
+        router_docs["Documents Router"]
+        router_system["System Router"]
+
+        job_svc["Job Service"]
+        file_store["Artifact Store"]
+        extractor["Text Extractor"]
+        chunker["Chunker"]
+        embedder["Embedding Client"]
+        retriever["Retrieval Service"]
+        fact_svc["Fact Extraction Service"]
+        calc_svc["Calculation Service"]
+        answer_svc["Answer Composer"]
+        guard_svc["Response Validator"]
+
+        repo_docs["Document Repository"]
+        repo_query["Query Repository"]
+        repo_job["Job Repository"]
+        duckdb[("DuckDB")]
+    end
+
+    ollama["Ollama on Host\nGemma4 26B"]
+
+    setup_ui --> upload_mgr
+    upload_mgr --> router_ingest
+    ingest_ui --> router_ingest
+    query_ui --> router_query
+    evidence_ui --> router_query
+    settings_ui --> router_system
+
+    router_ingest --> job_svc
+    job_svc --> file_store
+    job_svc --> extractor
+    job_svc --> chunker
+    job_svc --> embedder
+    job_svc --> fact_svc
+    job_svc --> repo_job
+    job_svc --> repo_docs
+
+    router_query --> retriever
+    router_query --> calc_svc
+    router_query --> answer_svc
+    router_query --> guard_svc
+    router_query --> repo_query
+
+    repo_docs --> duckdb
+    repo_query --> duckdb
+    repo_job --> duckdb
+
+    embedder --> ollama
+    answer_svc --> ollama
+    fact_svc --> ollama

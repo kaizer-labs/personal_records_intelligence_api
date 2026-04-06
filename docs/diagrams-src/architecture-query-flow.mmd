@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor U as User
+    participant UI as Browser UI
+    participant API as FastAPI
+    participant DB as DuckDB
+    participant CALC as Calculator
+    participant O as Ollama
+
+    U->>UI: Ask a question
+    UI->>API: Submit query
+    API->>API: Classify query type
+    API->>DB: Retrieve candidate chunks, facts, and metadata
+    API->>API: Build evidence set
+
+    alt Enough typed facts for deterministic computation
+        API->>CALC: Run calculation from normalized facts
+        CALC->>DB: Persist calculation_run and trace
+        CALC-->>API: Outputs + warnings
+    else Retrieval-only answer
+        API->>API: Skip calculation and mark answer mode as retrieval
+    end
+
+    API->>O: Generate final answer wording from evidence and calculation output
+    O-->>API: Source-backed answer draft
+    API->>DB: Persist query_run, citations, warnings, and answer mode
+    API-->>UI: Answer + citations + extracted facts + calculation trace + warnings

@@ -1,0 +1,23 @@
+flowchart LR
+    jobs["index_jobs"]
+    items["index_job_items"]
+    docs["documents"]
+    chunks["chunks"]
+    emb["embeddings"]
+    records["extracted_records"]
+    facts["facts"]
+    queries["query_runs"]
+    calc["calculation_runs"]
+    cites["query_citations"]
+
+    jobs --> items
+    items --> docs
+    docs --> chunks
+    chunks --> emb
+    docs --> records
+    records --> facts
+    queries --> calc
+    queries --> cites
+    cites --> docs
+    cites --> chunks
+    cites --> facts

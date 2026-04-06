@@ -4,23 +4,21 @@ FastAPI backend for the Personal Records Intelligence MVP.
 
 ## Setup
 
-Run the API service locally:
+From inside this repo:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+cd /Users/kaizer/Desktop/personal_records_intelligence/personal_records_intelligence_api
+docker compose up --build
 ```
 
-Or build and run the API container directly:
-
-```bash
-docker build -t personal-records-intelligence-api .
-docker run --rm -p 8000:8000 personal-records-intelligence-api
-```
-
-Then open:
+API endpoints:
 
 - `http://localhost:8000/health_check`
 - `http://localhost:8000/docs`
+
+UI:
+
+- `http://localhost:5173`
 
 ## What Exists Today
 
@@ -28,7 +26,17 @@ Then open:
 - embedded DuckDB setup with startup initialization
 - OpenAPI docs at `/docs`
 - Dockerfile for local containerized development
+- `docker-compose.yml` for API-local orchestration of backend plus sibling UI
 - AI-friendly repository markdown files for onboarding and safe iteration
+
+## Docs
+
+- `docs/architecture.md`
+- `docs/low-level-architecture.md`
+- `docs/duckdb-setup.md`
+- `docs/docker-setup.md`
+- `docs/api-contract.md`
+- `docs/development-workflow.md`
 
 ## Project Layout
 
@@ -39,6 +47,9 @@ Then open:
 - `app/schemas/health.py`: response schema
 - `tests/test_health_check.py`: API smoke test
 - `Dockerfile`: API image definition
+- `docker-compose.yml`: local orchestration entrypoint
+- `docs/duckdb-setup.md`: install, startup, and verification notes
+- `docs/docker-setup.md`: Docker and compose setup notes
 - `skills.md`: AI development guide for this repo
 
 ## Next Suggested Backend Steps
