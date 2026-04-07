@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
         examples_root=settings.examples_path,
     )
     app.state.chat_service = ChatService(
+        database,
         app.state.library_service,
         ollama_client,
     )

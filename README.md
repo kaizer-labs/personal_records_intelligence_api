@@ -2,18 +2,46 @@
 
 FastAPI backend for the Personal Records Intelligence MVP.
 
+## Demo
+
+Lightweight product preview:
+
+![Personal Records Intelligence demo](docs/assets/demo/personal_records_intelligence_demo_light.gif)
+
+## What This Repo Runs
+
+- FastAPI backend on `http://localhost:8000`
+- DuckDB as embedded local storage
+- Docker orchestration for the backend plus sibling React UI
+- Ollama integration for local chat and embeddings
+
+## Prerequisites
+
+Before starting the stack, make sure:
+
+- Docker Desktop is running
+- Ollama is installed and running on the Mac host
+- the required models are available in Ollama
+
+Check models:
+
+```bash
+ollama list
+```
+
+If needed, pull them:
+
+```bash
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+```
+
 ## Local Model Defaults
 
 - chat model: `qwen2.5:7b`
 - embedding model: `nomic-embed-text`
 - Ollama base URL from Docker: `http://host.docker.internal:11434`
 - recommended chat context on this Mac: `4096`
-- semantic retrieval activates once `nomic-embed-text` is pulled locally
-
-## Local Examples
-
-The `examples/` folder is intended for local-only sample documents and is not
-committed to the public repository.
 
 ## Setup
 
@@ -24,24 +52,50 @@ cd /Users/kaizer/Desktop/personal_records_intelligence/personal_records_intellig
 docker compose up --build
 ```
 
-API endpoints:
+### Open The App
 
-- `http://localhost:8000/health_check`
-- `http://localhost:8000/docs`
+- UI: `http://localhost:5173`
+- API docs: `http://localhost:8000/docs`
+- API health check: `http://localhost:8000/health_check`
 
-UI:
+### Verify The Backend
 
-- `http://localhost:5173`
+The health check should report:
+
+- `status: ok`
+- DuckDB path under `/app/data/duckdb/app.duckdb`
+- Ollama chat model `qwen2.5:7b`
+- Ollama embedding model `nomic-embed-text`
+
+## Local Data And Privacy
+
+- Indexed files and DuckDB data live under `data/`
+- `data/` is gitignored and should remain local-only
+- The `examples/` folder is for local demo/sample documents and is also ignored by git, except for `examples/README.md`
+
+To reset local indexed data, stop the API container and clear `data/`.
 
 ## What Exists Today
 
 - `GET /health_check`
-- embedded DuckDB setup with startup initialization
+- document ingestion and local example loading
+- local chat over indexed records
+- source-backed evidence inspection
+- DuckDB startup initialization
 - Ollama configuration for local generation and embeddings
 - OpenAPI docs at `/docs`
-- Dockerfile for local containerized development
 - `docker-compose.yml` for API-local orchestration of backend plus sibling UI
 - AI-friendly repository markdown files for onboarding and safe iteration
+
+## Key Endpoints
+
+- `GET /health_check`
+- `GET /docs`
+- `POST /api/library/examples/sync`
+- `POST /api/library/folders/sync`
+- `GET /api/library/folders`
+- `POST /api/chat/answers`
+- `POST /api/chat/answers/stream`
 
 ## Docs
 
@@ -54,21 +108,22 @@ UI:
 
 ## Project Layout
 
-- `app/main.py`: FastAPI app factory and middleware
+- `app/main.py`: FastAPI app factory and startup wiring
 - `app/api/routes/health.py`: health check endpoint
+- `app/api/routes/library.py`: document and folder ingestion routes
+- `app/api/routes/chat.py`: chat and streaming routes
 - `app/core/config.py`: environment-driven settings
 - `app/db/connection.py`: DuckDB connection and bootstrap logic
-- `app/schemas/health.py`: response schema
-- `tests/test_health_check.py`: API smoke test
+- `app/services/library.py`: library ingestion and file management
+- `app/services/chat.py`: retrieval and answer orchestration
+- `app/services/ollama.py`: local model client
 - `Dockerfile`: API image definition
 - `docker-compose.yml`: local orchestration entrypoint
-- `docs/duckdb-setup.md`: install, startup, and verification notes
-- `docs/docker-setup.md`: Docker and compose setup notes
 - `skills.md`: AI development guide for this repo
 
 ## Next Suggested Backend Steps
 
-1. Add `system`, `documents`, and `query` routers.
-2. Add DuckDB connection management.
-3. Add ingestion and query DTOs.
-4. Add service and repository layers from the architecture docs.
+1. Improve structured extraction for financial and admin records.
+2. Add OCR support for scanned PDFs and image-heavy files.
+3. Add stronger evaluation and citation confidence workflows.
+4. Expand beyond documents into bookmarks and screenshots.

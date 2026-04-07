@@ -1,7 +1,15 @@
 # Local Examples
 
-Place local-only sample documents in this folder when you want to test the
-`Load Example PDF` flow in the UI.
+This folder holds a synthetic demo pack for the `Load local examples` flow in
+the UI.
 
-This folder is intentionally excluded from git so personal documents do not end
-up in the public repository.
+The example files are intentionally fake but realistic. They are designed to
+exercise prompts around:
+
+- important dates
+- amounts and balances
+- commitments and next steps
+- cross-document summaries
+
+You can replace these files with your own local-only documents whenever you
+want to test personal scenarios.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
@@ -51,6 +51,14 @@ class ChunkRecord:
     chunk_index: int
     embedding: list[float] | None
     embedding_model: str | None
+
+
+@dataclass(frozen=True)
+class StoredDocumentFile:
+    document_id: str
+    filename: str
+    media_type: str
+    storage_path: Path
 
 
 class LibraryService:
@@ -246,7 +254,7 @@ class LibraryService:
                 params,
             )
 
-        records = [
+        return [
             ChunkRecord(
                 chunk_id=str(row[0]),
                 document_id=str(row[1]),
@@ -260,8 +268,6 @@ class LibraryService:
             )
             for row in rows
         ]
-
-        return self._backfill_missing_embeddings(records)
 
     def remove_document(self, document_id: str) -> FolderListResponse:
         row = self._database.fetchone(
@@ -316,6 +322,40 @@ class LibraryService:
 
         self._database.execute("DELETE FROM folders WHERE id = ?", [folder_id])
         return self.list_folders()
+
+    def get_document_file(self, document_id: str) -> StoredDocumentFile | None:
+        row = self._database.fetchone(
+            """
+            SELECT
+                id,
+                filename,
+                media_type,
+                storage_path
+            FROM documents
+            WHERE id = ?
+            """,
+            [document_id],
+        )
+        if row is None:
+            return None
+
+        storage_path = Path(str(row[3])).resolve()
+        storage_root = self._storage_root.resolve()
+
+        try:
+            storage_path.relative_to(storage_root)
+        except ValueError:
+            return None
+
+        if not storage_path.is_file():
+            return None
+
+        return StoredDocumentFile(
+            document_id=str(row[0]),
+            filename=str(row[1]),
+            media_type=str(row[2]),
+            storage_path=storage_path,
+        )
 
     def _sync_folder_batch(
         self,
@@ -629,53 +669,6 @@ class LibraryService:
                     json.dumps(embedding),
                 ],
             )
-
-    def _backfill_missing_embeddings(self, records: list[ChunkRecord]) -> list[ChunkRecord]:
-        missing_records = [record for record in records if record.embedding is None]
-        if not missing_records:
-            return records
-
-        try:
-            embeddings = self._ollama_client.embed_texts(
-                [record.text for record in missing_records]
-            )
-        except OllamaServiceError:
-            return records
-
-        embeddings_by_chunk_id: dict[str, list[float]] = {}
-        for record, embedding in zip(missing_records, embeddings, strict=False):
-            embeddings_by_chunk_id[record.chunk_id] = embedding
-            self._database.execute(
-                """
-                INSERT OR REPLACE INTO chunk_embeddings (
-                    chunk_id,
-                    embedding_model,
-                    embedding_dimension,
-                    embedding_json,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """,
-                [
-                    record.chunk_id,
-                    self._ollama_client.embedding_model,
-                    len(embedding),
-                    json.dumps(embedding),
-                ],
-            )
-
-        return [
-            replace(
-                record,
-                embedding=embeddings_by_chunk_id.get(record.chunk_id, record.embedding),
-                embedding_model=(
-                    self._ollama_client.embedding_model
-                    if record.chunk_id in embeddings_by_chunk_id
-                    else record.embedding_model
-                ),
-            )
-            for record in records
-        ]
 
     def _delete_document_record(self, *, document_id: str, storage_path: str) -> None:
         self._database.execute(

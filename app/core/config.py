@@ -7,6 +7,17 @@ def _parse_origins(raw_value: str) -> list[str]:
     return [origin for origin in origins if origin]
 
 
+def _parse_optional_int(raw_value: str | None) -> int | None:
+    if raw_value is None:
+        return None
+
+    cleaned = raw_value.strip()
+    if not cleaned:
+        return None
+
+    return int(cleaned)
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str
@@ -20,6 +31,7 @@ class Settings:
     ollama_chat_model: str
     ollama_embedding_model: str
     ollama_chat_num_ctx: int
+    ollama_chat_num_predict: int | None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -41,6 +53,9 @@ class Settings:
                 "OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"
             ),
             ollama_chat_num_ctx=int(os.getenv("OLLAMA_CHAT_NUM_CTX", "4096")),
+            ollama_chat_num_predict=_parse_optional_int(
+                os.getenv("OLLAMA_CHAT_NUM_PREDICT")
+            ),
         )
 
 

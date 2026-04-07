@@ -59,12 +59,32 @@ CREATE TABLE IF NOT EXISTS chunk_embeddings (
     PRIMARY KEY (chunk_id, embedding_model)
 );
 
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    id VARCHAR PRIMARY KEY,
+    title VARCHAR NOT NULL,
+    folder_names_json VARCHAR NOT NULL DEFAULT '[]',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id VARCHAR PRIMARY KEY,
+    conversation_id VARCHAR NOT NULL,
+    role VARCHAR NOT NULL,
+    content VARCHAR NOT NULL,
+    meta VARCHAR,
+    sources_json VARCHAR NOT NULL DEFAULT '[]',
+    sort_index INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(conversation_id, sort_index)
+);
+
 DELETE FROM app_metadata WHERE key IN ('bootstrap_status', 'schema_version');
 
 INSERT INTO app_metadata (key, value)
 VALUES
     ('bootstrap_status', 'ready'),
-    ('schema_version', '3');
+    ('schema_version', '4');
 """
 
 

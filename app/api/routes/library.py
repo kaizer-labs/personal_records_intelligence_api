@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from urllib.parse import unquote
 
 from app.schemas.library import FolderListResponse, FolderSyncResponse
@@ -43,6 +44,19 @@ async def upload_folder(
 @router.delete("/documents/{document_id}", response_model=FolderListResponse)
 async def delete_document(document_id: str, request: Request) -> FolderListResponse:
     return request.app.state.library_service.remove_document(document_id)
+
+
+@router.get("/documents/{document_id}/file")
+async def open_document_file(document_id: str, request: Request) -> FileResponse:
+    document = request.app.state.library_service.get_document_file(document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document file not found.")
+
+    return FileResponse(
+        path=document.storage_path,
+        media_type=document.media_type,
+        filename=document.filename,
+    )
 
 
 @router.delete("/folders/{folder_name}", response_model=FolderListResponse)
