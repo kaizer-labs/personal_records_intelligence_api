@@ -12,14 +12,15 @@ Lightweight product preview:
 
 - FastAPI backend on `http://localhost:8000`
 - DuckDB as embedded local storage
-- Docker orchestration for the backend plus sibling React UI
 - Ollama integration for local chat and embeddings
+- Poetry-managed local Python environment
 
 ## Prerequisites
 
-Before starting the stack, make sure:
+Before starting local development, make sure:
 
-- Docker Desktop is running
+- Python `3.11`
+- Poetry
 - Ollama is installed and running on the Mac host
 - the required models are available in Ollama
 
@@ -43,20 +44,37 @@ ollama pull nomic-embed-text
 - Ollama base URL from Docker: `http://host.docker.internal:11434`
 - recommended chat context on this Mac: `4096`
 
-## Setup
+## Local Development
 
 From inside this repo:
 
 ```bash
 cd /Users/kaizer/Desktop/personal_records_intelligence/personal_records_intelligence_api
-docker compose up --build
+poetry install
+poetry run uvicorn app.main:app --reload
 ```
 
-### Open The App
+Poetry is configured to create the virtual environment inside this repo at `.venv/`.
 
-- UI: `http://localhost:5173`
+### Open The Backend
+
 - API docs: `http://localhost:8000/docs`
 - API health check: `http://localhost:8000/health_check`
+
+### Run Tests
+
+```bash
+poetry run pytest -q
+```
+
+## Docker Option
+
+If you want to run only the backend container:
+
+```bash
+cd /Users/kaizer/Desktop/personal_records_intelligence/personal_records_intelligence_api
+docker compose up --build api
+```
 
 ### Verify The Backend
 
@@ -84,7 +102,7 @@ To reset local indexed data, stop the API container and clear `data/`.
 - DuckDB startup initialization
 - Ollama configuration for local generation and embeddings
 - OpenAPI docs at `/docs`
-- `docker-compose.yml` for API-local orchestration of backend plus sibling UI
+- local Python development through Poetry
 - AI-friendly repository markdown files for onboarding and safe iteration
 
 ## Key Endpoints
@@ -122,7 +140,9 @@ To reset local indexed data, stop the API container and clear `data/`.
 - `app/services/chat.py`: retrieval and answer orchestration
 - `app/services/ollama.py`: local model client
 - `Dockerfile`: API image definition
-- `docker-compose.yml`: local orchestration entrypoint
+- `docker-compose.yml`: optional containerized backend startup
+- `pyproject.toml`: Poetry project definition
+- `poetry.toml`: Poetry local environment settings
 - `skills.md`: AI development guide for this repo
 
 ## Next Suggested Backend Steps
