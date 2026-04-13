@@ -54,8 +54,30 @@ The docs also describe a target architecture with facts, query traces, validator
 - Keep route handlers thin and push logic down into dependencies, repositories, or services.
 - Prefer explicit schemas and stable response shapes over ad hoc dicts.
 - Update docs when contracts, architecture, startup flow, or package structure changes.
+- Start each non-trivial task by writing down concrete test scenarios before changing code.
+- Prefer test-first delivery: add or update failing tests, then work backward into the minimum implementation that satisfies them.
+- When a change touches existing behavior, add characterization tests first so refactors are anchored to the current contract.
 - Add tests with behavior changes whenever practical.
 - Avoid growing already-large files if a new module boundary would make the change easier to understand.
+
+## Test-First Workflow
+
+For feature work, bug fixes, refactors, and AI-assisted changes, follow this sequence unless there is a strong reason not to:
+
+1. Define the behavior in test scenarios before editing implementation code.
+2. Cover the happy path, the primary edge case, and the most important failure mode.
+3. Translate those scenarios into failing tests or update existing tests to express the new contract.
+4. Implement the smallest code change that makes those tests pass.
+5. Refactor only after the behavior is protected by tests.
+6. Re-run the targeted tests first, then the broader repo checks that fit the change.
+
+Preferred scenario format:
+
+- `Given`: starting state or input
+- `When`: action taken
+- `Then`: expected observable result
+
+If a task cannot start with tests, document why. Good reasons include third-party exploration spikes, temporary debugging, or infrastructure work with no stable seam yet. In those cases, add characterization or regression tests as soon as the seam becomes clear.
 
 ## Current Refactor Direction
 
@@ -111,6 +133,7 @@ These are the main maturity gaps to keep in mind while changing the repo:
 
 Use the lightest checks that fit the change:
 
+- targeted `pytest` cases for the affected module or endpoint
 - `env PYTHONPYCACHEPREFIX=/tmp/pri-pycache python3 -m compileall app tests`
 - `pytest -q`
 - `docker compose up --build`
@@ -127,3 +150,7 @@ Tool-specific AI guidance is allowed, but keep it layered:
 - task-specific prompts can live under `ai/prompts/`
 
 Those files should refine this guide, not contradict it.
+
+Current reusable workflow:
+
+- `ai/skills/test-first-development.md`: define scenarios first, write failing tests, then implement backward from the contract
