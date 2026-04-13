@@ -1,14 +1,14 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
 from app.core.config import settings
+from app.deps import DatabaseDep
 from app.schemas.health import HealthCheckResponse
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health_check", response_model=HealthCheckResponse)
-async def health_check(request: Request) -> HealthCheckResponse:
-    database = request.app.state.db
+async def health_check(database: DatabaseDep) -> HealthCheckResponse:
     return HealthCheckResponse(
         status="ok",
         service=settings.app_name,

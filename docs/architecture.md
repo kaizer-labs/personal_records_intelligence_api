@@ -26,6 +26,33 @@ If your Markdown viewer does not render Mermaid, the SVG fallback images below s
 - Re-indexing is manual in MVP.
 - Answers must always return citations and warnings when evidence is incomplete.
 
+## Current State Vs Target State
+
+This document intentionally mixes two views:
+
+- the concrete MVP that exists in code today
+- the target architecture the repo should grow into
+
+For onboarding, that distinction should stay explicit.
+
+What exists today in the backend:
+
+- FastAPI app setup and Docker startup
+- DuckDB bootstrap with document, chunk, embedding, and chat persistence
+- browser-uploaded file ingestion
+- text extraction for PDF, TXT, Markdown, CSV, and JSON
+- grounded chat answers with source excerpts
+
+What is still target-state architecture:
+
+- extracted records and normalized facts
+- deterministic calculators
+- persisted query runs and calculation traces
+- response validation and warning enforcement
+- richer readiness, observability, and background job orchestration
+
+New contributors should treat missing target-state pieces as roadmap items, not as already-implemented guarantees.
+
 ## Core Architectural Choices
 
 ### 1. DuckDB as the local system of record
@@ -182,6 +209,55 @@ sequenceDiagram
 - `Extraction + Fact Normalization`: document classification, structured extraction, typed fact emission, provenance capture
 - `Deterministic Calculator`: totals, comparisons, date arithmetic, deadline calculations, aggregation from trusted facts
 - `Answer Orchestrator`: assembles evidence, invokes the LLM for wording, and produces user-facing payloads
+
+## Recommended Repo Shape For Faster Onboarding
+
+The current top-level layout is already understandable, but the backend should evolve toward a more explicit package structure as the API surface expands.
+
+Recommended target shape:
+
+```text
+root/
+  AGENTS.md
+  README.md
+  docs/
+  ai/
+    skills/
+    prompts/
+  app/
+    api/
+      v1/
+        endpoints/
+        api.py
+    core/
+    db/
+    repositories/
+    schemas/
+    services/
+      ingestion/
+      retrieval/
+      extraction/
+      answer/
+      system/
+    deps.py
+    main.py
+  tests/
+```
+
+Why this shape helps:
+
+- `AGENTS.md` gives every new contributor one canonical starting point.
+- `api/v1` creates a stable contract boundary once the surface grows beyond MVP endpoints.
+- `endpoints/` keeps route handlers small and discoverable.
+- `repositories/` is a better fit than ORM-style `models/` for the current DuckDB-plus-SQL approach.
+- `deps.py` makes dependency wiring visible and reusable instead of hiding it in app state lookups.
+- `ai/skills/` and `ai/prompts/` support AI-assisted work without coupling runtime code to a specific IDE.
+
+What not to over-rotate on yet:
+
+- do not add API versioning just for aesthetics if the contract is still changing daily
+- do not add ORM-only folders unless the persistence layer actually moves to an ORM
+- do not let AI-tooling folders become the only place important project rules live
 
 ## Suggested DuckDB Tables
 

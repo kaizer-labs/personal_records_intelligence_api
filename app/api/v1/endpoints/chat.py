@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from app.deps import ChatServiceDep
 from app.schemas.chat import (
     ChatConversationDetailResponse,
     ChatConversationListResponse,
@@ -13,8 +14,8 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.get("/conversations", response_model=ChatConversationListResponse)
-async def list_conversations(request: Request) -> ChatConversationListResponse:
-    return request.app.state.chat_service.list_conversations()
+async def list_conversations(chat_service: ChatServiceDep) -> ChatConversationListResponse:
+    return chat_service.list_conversations()
 
 
 @router.get(
@@ -23,9 +24,9 @@ async def list_conversations(request: Request) -> ChatConversationListResponse:
 )
 async def get_conversation(
     conversation_id: str,
-    request: Request,
+    chat_service: ChatServiceDep,
 ) -> ChatConversationDetailResponse:
-    conversation = request.app.state.chat_service.get_conversation(conversation_id)
+    conversation = chat_service.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
     return conversation
@@ -37,18 +38,18 @@ async def get_conversation(
 )
 async def delete_conversation(
     conversation_id: str,
-    request: Request,
+    chat_service: ChatServiceDep,
 ) -> ChatConversationListResponse:
-    return request.app.state.chat_service.delete_conversation(conversation_id)
+    return chat_service.delete_conversation(conversation_id)
 
 
 @router.post("/answers", response_model=ChatResponse)
 async def answer_question(
     payload: ChatRequest,
-    request: Request,
+    chat_service: ChatServiceDep,
 ) -> ChatResponse:
     try:
-        return request.app.state.chat_service.answer_question(
+        return chat_service.answer_question(
             question=payload.question,
             folder_names=payload.folder_names,
             conversation_id=payload.conversation_id,
@@ -60,10 +61,10 @@ async def answer_question(
 @router.post("/answers/stream")
 async def answer_question_stream(
     payload: ChatRequest,
-    request: Request,
+    chat_service: ChatServiceDep,
 ) -> StreamingResponse:
     return StreamingResponse(
-        request.app.state.chat_service.stream_answer_question(
+        chat_service.stream_answer_question(
             question=payload.question,
             folder_names=payload.folder_names,
             conversation_id=payload.conversation_id,

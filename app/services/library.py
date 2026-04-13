@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from pypdf import PdfReader
 
-from app.db.connection import DatabaseManager
+from app.repositories.documents import DocumentRepository
 from app.schemas.library import (
     DocumentSummary,
     FolderListResponse,
@@ -64,72 +64,46 @@ class StoredDocumentFile:
 class LibraryService:
     def __init__(
         self,
-        database: DatabaseManager,
+        document_repository: DocumentRepository,
         ollama_client: OllamaClient,
         *,
         storage_root: str,
         examples_root: str,
     ) -> None:
-        self._database = database
+        self._documents = document_repository
         self._ollama_client = ollama_client
         self._storage_root = Path(storage_root)
         self._examples_root = Path(examples_root)
 
     def list_folders(self) -> FolderListResponse:
-        folder_rows = self._database.fetchall(
-            """
-            SELECT
-                id,
-                name,
-                origin,
-                updated_at
-            FROM folders
-            ORDER BY updated_at DESC, name ASC
-            """
-        )
-
-        document_rows = self._database.fetchall(
-            """
-            SELECT
-                documents.id,
-                folders.name,
-                documents.filename,
-                documents.relative_path,
-                documents.media_type,
-                documents.char_count,
-                documents.chunk_count,
-                documents.updated_at
-            FROM documents
-            INNER JOIN folders ON folders.id = documents.folder_id
-            ORDER BY folders.name ASC, documents.relative_path ASC
-            """
-        )
+        folder_rows = self._documents.list_folders()
+        document_rows = self._documents.list_documents()
 
         documents_by_folder: dict[str, list[DocumentSummary]] = {}
         chunk_counts: dict[str, int] = {}
 
         for row in document_rows:
-            folder_name = str(row[1])
+            folder_name = row.folder_name
             document = DocumentSummary(
-                id=str(row[0]),
-                filename=str(row[2]),
-                relative_path=str(row[3]),
-                media_type=str(row[4]),
-                char_count=int(row[5]),
-                chunk_count=int(row[6]),
-                updated_at=self._serialize_timestamp(row[7]),
+                id=row.document_id,
+                filename=row.filename,
+                relative_path=row.relative_path,
+                media_type=row.media_type,
+                char_count=row.char_count,
+                chunk_count=row.chunk_count,
+                updated_at=self._serialize_timestamp(row.updated_at),
             )
             documents_by_folder.setdefault(folder_name, []).append(document)
             chunk_counts[folder_name] = chunk_counts.get(folder_name, 0) + document.chunk_count
 
         folders = [
             FolderSummary(
-                name=str(row[1]),
-                origin=str(row[2]),
-                updated_at=self._serialize_timestamp(row[3]),
-                document_count=len(documents_by_folder.get(str(row[1]), [])),
-                chunk_count=chunk_counts.get(str(row[1]), 0),
-                documents=documents_by_folder.get(str(row[1]), []),
+                name=row.name,
+                origin=row.origin,
+                updated_at=self._serialize_timestamp(row.updated_at),
+                document_count=len(documents_by_folder.get(row.name, [])),
+                chunk_count=chunk_counts.get(row.name, 0),
+                documents=documents_by_folder.get(row.name, []),
             )
             for row in folder_rows
         ]
@@ -162,6 +136,7 @@ class LibraryService:
             folder_name="Examples",
             origin="api_examples",
             files=ingest_files,
+            prune_missing_documents=True,
         )
 
     def sync_browser_uploads(self, files: list[IngestFile]) -> FolderSyncResponse:
@@ -191,6 +166,7 @@ class LibraryService:
                 folder_name=folder_name,
                 origin="browser_upload",
                 files=folder_files,
+                prune_missing_documents=False,
             )
             processed_files.extend(result.processed_files)
 
@@ -202,144 +178,58 @@ class LibraryService:
         *,
         folder_names: list[str] | None = None,
     ) -> list[ChunkRecord]:
-        params: list[object] = [self._ollama_client.embedding_model]
-
-        if folder_names:
-            placeholders = ",".join(["?"] * len(folder_names))
-            params.extend(folder_names)
-            rows = self._database.fetchall(
-                f"""
-                SELECT
-                    chunks.id,
-                    documents.id,
-                    folders.name,
-                    documents.filename,
-                    documents.relative_path,
-                    chunks.text,
-                    chunks.chunk_index,
-                    chunk_embeddings.embedding_json,
-                    chunk_embeddings.embedding_model
-                FROM chunks
-                INNER JOIN documents ON documents.id = chunks.document_id
-                INNER JOIN folders ON folders.id = documents.folder_id
-                LEFT JOIN chunk_embeddings
-                    ON chunk_embeddings.chunk_id = chunks.id
-                    AND chunk_embeddings.embedding_model = ?
-                WHERE folders.name IN ({placeholders})
-                ORDER BY folders.name ASC, documents.relative_path ASC, chunks.chunk_index ASC
-                """,
-                params,
-            )
-        else:
-            rows = self._database.fetchall(
-                """
-                SELECT
-                    chunks.id,
-                    documents.id,
-                    folders.name,
-                    documents.filename,
-                    documents.relative_path,
-                    chunks.text,
-                    chunks.chunk_index,
-                    chunk_embeddings.embedding_json,
-                    chunk_embeddings.embedding_model
-                FROM chunks
-                INNER JOIN documents ON documents.id = chunks.document_id
-                INNER JOIN folders ON folders.id = documents.folder_id
-                LEFT JOIN chunk_embeddings
-                    ON chunk_embeddings.chunk_id = chunks.id
-                    AND chunk_embeddings.embedding_model = ?
-                ORDER BY folders.name ASC, documents.relative_path ASC, chunks.chunk_index ASC
-                """,
-                params,
-            )
+        rows = self._documents.search_chunks(
+            embedding_model=self._ollama_client.embedding_model,
+            folder_names=folder_names,
+        )
 
         return [
             ChunkRecord(
-                chunk_id=str(row[0]),
-                document_id=str(row[1]),
-                folder_name=str(row[2]),
-                document_name=str(row[3]),
-                relative_path=str(row[4]),
-                text=str(row[5]),
-                chunk_index=int(row[6]),
-                embedding=json.loads(str(row[7])) if row[7] else None,
-                embedding_model=str(row[8]) if row[8] else None,
+                chunk_id=row.chunk_id,
+                document_id=row.document_id,
+                folder_name=row.folder_name,
+                document_name=row.document_name,
+                relative_path=row.relative_path,
+                text=row.text,
+                chunk_index=row.chunk_index,
+                embedding=json.loads(row.embedding_json) if row.embedding_json else None,
+                embedding_model=row.embedding_model,
             )
             for row in rows
         ]
 
     def remove_document(self, document_id: str) -> FolderListResponse:
-        row = self._database.fetchone(
-            """
-            SELECT
-                documents.id,
-                documents.folder_id,
-                documents.storage_path
-            FROM documents
-            WHERE documents.id = ?
-            """,
-            [document_id],
-        )
+        row = self._documents.get_document_location(document_id)
         if row is None:
             return self.list_folders()
 
-        _, folder_id, storage_path = row
         self._delete_document_record(
-            document_id=str(document_id),
-            storage_path=str(storage_path),
+            document_id=document_id,
+            storage_path=row.storage_path,
         )
-        self._prune_empty_folder(str(folder_id))
+        self._prune_empty_folder(row.folder_id)
         return self.list_folders()
 
     def clear_folder(self, folder_name: str) -> FolderListResponse:
-        row = self._database.fetchone(
-            """
-            SELECT id
-            FROM folders
-            WHERE name = ?
-            """,
-            [folder_name],
-        )
-        if row is None:
+        folder_id = self._documents.get_folder_id(folder_name)
+        if folder_id is None:
             return self.list_folders()
 
-        folder_id = str(row[0])
-        document_rows = self._database.fetchall(
-            """
-            SELECT id, storage_path
-            FROM documents
-            WHERE folder_id = ?
-            """,
-            [folder_id],
-        )
-
-        for document_id, storage_path in document_rows:
+        for document in self._documents.list_folder_documents(folder_id):
             self._delete_document_record(
-                document_id=str(document_id),
-                storage_path=str(storage_path),
+                document_id=document.document_id,
+                storage_path=document.storage_path,
             )
 
-        self._database.execute("DELETE FROM folders WHERE id = ?", [folder_id])
+        self._documents.delete_folder(folder_id)
         return self.list_folders()
 
     def get_document_file(self, document_id: str) -> StoredDocumentFile | None:
-        row = self._database.fetchone(
-            """
-            SELECT
-                id,
-                filename,
-                media_type,
-                storage_path
-            FROM documents
-            WHERE id = ?
-            """,
-            [document_id],
-        )
+        row = self._documents.get_document_file(document_id)
         if row is None:
             return None
 
-        storage_path = Path(str(row[3])).resolve()
+        storage_path = Path(row.storage_path).resolve()
         storage_root = self._storage_root.resolve()
 
         try:
@@ -351,9 +241,9 @@ class LibraryService:
             return None
 
         return StoredDocumentFile(
-            document_id=str(row[0]),
-            filename=str(row[1]),
-            media_type=str(row[2]),
+            document_id=row.document_id,
+            filename=row.filename,
+            media_type=row.media_type,
             storage_path=storage_path,
         )
 
@@ -363,8 +253,9 @@ class LibraryService:
         folder_name: str,
         origin: str,
         files: list[IngestFile],
+        prune_missing_documents: bool,
     ) -> FolderSyncResponse:
-        folder_id = self._upsert_folder(folder_name, origin)
+        folder_id = self._documents.upsert_folder(folder_name, origin)
         processed_files: list[ProcessedFileResult] = []
         active_relative_paths: list[str] = []
 
@@ -429,40 +320,14 @@ class LibraryService:
                 )
             )
 
-        self._delete_stale_documents(folder_id=folder_id, active_relative_paths=active_relative_paths)
-        self._database.execute(
-            "UPDATE folders SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            [folder_id],
-        )
+        if prune_missing_documents:
+            self._delete_stale_documents(
+                folder_id=folder_id,
+                active_relative_paths=active_relative_paths,
+            )
+        self._documents.touch_folder(folder_id)
         folders = self.list_folders()
         return FolderSyncResponse(folders=folders.folders, processed_files=processed_files)
-
-    def _upsert_folder(self, folder_name: str, origin: str) -> str:
-        existing = self._database.fetchone(
-            "SELECT id FROM folders WHERE name = ?",
-            [folder_name],
-        )
-        if existing:
-            folder_id = str(existing[0])
-            self._database.execute(
-                """
-                UPDATE folders
-                SET origin = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                [origin, folder_id],
-            )
-            return folder_id
-
-        folder_id = str(uuid4())
-        self._database.execute(
-            """
-            INSERT INTO folders (id, name, origin)
-            VALUES (?, ?, ?)
-            """,
-            [folder_id, folder_name, origin],
-        )
-        return folder_id
 
     def _upsert_document(
         self,
@@ -473,15 +338,8 @@ class LibraryService:
         extracted_text: str,
         chunks: list[str],
     ) -> str:
-        existing = self._database.fetchone(
-            """
-            SELECT id
-            FROM documents
-            WHERE folder_id = ? AND relative_path = ?
-            """,
-            [folder_id, file.relative_path],
-        )
-        document_id = str(existing[0]) if existing else str(uuid4())
+        existing_document_id = self._documents.get_document_id(folder_id, file.relative_path)
+        document_id = existing_document_id or str(uuid4())
 
         storage_path = self._write_file_to_storage(
             folder_name=folder_name,
@@ -492,118 +350,34 @@ class LibraryService:
 
         media_type = file.content_type or SUPPORTED_EXTENSIONS.get(Path(file.filename).suffix.lower(), "application/octet-stream")
         content_hash = sha256(file.data).hexdigest()
+        document_id = self._documents.upsert_document(
+            folder_id=folder_id,
+            filename=file.filename,
+            relative_path=file.relative_path,
+            storage_path=storage_path,
+            media_type=media_type,
+            sha256=content_hash,
+            extracted_text=extracted_text,
+            char_count=len(extracted_text),
+            chunk_count=len(chunks),
+        )
 
-        if existing:
-            self._database.execute(
-                """
-                DELETE FROM chunk_embeddings
-                WHERE chunk_id IN (
-                    SELECT id
-                    FROM chunks
-                    WHERE document_id = ?
-                )
-                """,
-                [document_id],
-            )
-            self._database.execute(
-                """
-                UPDATE documents
-                SET
-                    filename = ?,
-                    relative_path = ?,
-                    storage_path = ?,
-                    media_type = ?,
-                    sha256 = ?,
-                    extracted_text = ?,
-                    char_count = ?,
-                    chunk_count = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                [
-                    file.filename,
-                    file.relative_path,
-                    storage_path,
-                    media_type,
-                    content_hash,
-                    extracted_text,
-                    len(extracted_text),
-                    len(chunks),
-                    document_id,
-                ],
-            )
-        else:
-            self._database.execute(
-                """
-                INSERT INTO documents (
-                    id,
-                    folder_id,
-                    filename,
-                    relative_path,
-                    storage_path,
-                    media_type,
-                    sha256,
-                    extracted_text,
-                    char_count,
-                    chunk_count
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    document_id,
-                    folder_id,
-                    file.filename,
-                    file.relative_path,
-                    storage_path,
-                    media_type,
-                    content_hash,
-                    extracted_text,
-                    len(extracted_text),
-                    len(chunks),
-                ],
-            )
-
-        self._database.execute("DELETE FROM chunks WHERE document_id = ?", [document_id])
-        chunk_records: list[tuple[str, str]] = []
-        for index, chunk in enumerate(chunks):
-            chunk_id = str(uuid4())
-            self._database.execute(
-                """
-                INSERT INTO chunks (id, document_id, chunk_index, text, token_estimate)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                [
-                    chunk_id,
-                    document_id,
-                    index,
-                    chunk,
-                    max(1, len(chunk.split())),
-                ],
-            )
-            chunk_records.append((chunk_id, chunk))
+        chunk_records = self._documents.replace_document_chunks(document_id, chunks)
 
         self._store_chunk_embeddings(chunk_records)
 
         return document_id
 
     def _delete_stale_documents(self, *, folder_id: str, active_relative_paths: list[str]) -> None:
-        rows = self._database.fetchall(
-            """
-            SELECT id, relative_path, storage_path
-            FROM documents
-            WHERE folder_id = ?
-            """,
-            [folder_id],
-        )
-
+        rows = self._documents.list_stored_folder_documents(folder_id)
         active_set = set(active_relative_paths)
-        for document_id, relative_path, storage_path in rows:
-            if str(relative_path) in active_set:
+        for document in rows:
+            if document.relative_path in active_set:
                 continue
 
             self._delete_document_record(
-                document_id=str(document_id),
-                storage_path=str(storage_path),
+                document_id=document.document_id,
+                storage_path=document.storage_path,
             )
 
     def _extract_text(self, file: IngestFile) -> str:
@@ -651,39 +425,14 @@ class LibraryService:
             return
 
         for (chunk_id, _), embedding in zip(chunk_records, embeddings, strict=False):
-            self._database.execute(
-                """
-                INSERT OR REPLACE INTO chunk_embeddings (
-                    chunk_id,
-                    embedding_model,
-                    embedding_dimension,
-                    embedding_json,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """,
-                [
-                    chunk_id,
-                    self._ollama_client.embedding_model,
-                    len(embedding),
-                    json.dumps(embedding),
-                ],
+            self._documents.store_chunk_embedding(
+                chunk_id=chunk_id,
+                embedding_model=self._ollama_client.embedding_model,
+                embedding=embedding,
             )
 
     def _delete_document_record(self, *, document_id: str, storage_path: str) -> None:
-        self._database.execute(
-            """
-            DELETE FROM chunk_embeddings
-            WHERE chunk_id IN (
-                SELECT id
-                FROM chunks
-                WHERE document_id = ?
-            )
-            """,
-            [document_id],
-        )
-        self._database.execute("DELETE FROM chunks WHERE document_id = ?", [document_id])
-        self._database.execute("DELETE FROM documents WHERE id = ?", [document_id])
+        self._documents.delete_document_tree(document_id)
 
         stored_file = Path(storage_path)
         if stored_file.exists():
@@ -697,13 +446,8 @@ class LibraryService:
                 pass
 
     def _prune_empty_folder(self, folder_id: str) -> None:
-        document_count = self._database.fetchone(
-            "SELECT COUNT(*) FROM documents WHERE folder_id = ?",
-            [folder_id],
-        )
-        count = int(document_count[0]) if document_count else 0
-        if count == 0:
-            self._database.execute("DELETE FROM folders WHERE id = ?", [folder_id])
+        if self._documents.count_documents(folder_id) == 0:
+            self._documents.delete_folder(folder_id)
 
     def _slugify(self, value: str) -> str:
         normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip()).strip("-").lower()

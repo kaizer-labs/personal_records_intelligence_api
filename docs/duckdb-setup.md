@@ -53,7 +53,7 @@ Seeded metadata today:
 - `app/core/config.py`: reads `DUCKDB_PATH`
 - `app/db/connection.py`: opens DuckDB and bootstraps schema
 - `app/main.py`: initializes DuckDB during app lifespan
-- `app/api/routes/health.py`: exposes DuckDB status through `GET /health_check`
+- `app/api/v1/endpoints/health.py`: exposes DuckDB status through `GET /health_check`
 - `../Dockerfile`: builds the API container that installs the DuckDB dependency
 
 ## How To Run

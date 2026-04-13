@@ -92,13 +92,14 @@ To reset local indexed data, stop the API container and clear `data/`.
 - `GET /health_check`
 - `GET /docs`
 - `POST /api/library/examples/sync`
-- `POST /api/library/folders/sync`
+- `POST /api/library/folders/upload`
 - `GET /api/library/folders`
 - `POST /api/chat/answers`
 - `POST /api/chat/answers/stream`
 
 ## Docs
 
+- `AGENTS.md`
 - `docs/architecture.md`
 - `docs/low-level-architecture.md`
 - `docs/duckdb-setup.md`
@@ -108,12 +109,15 @@ To reset local indexed data, stop the API container and clear `data/`.
 
 ## Project Layout
 
+- `AGENTS.md`: fast contributor and AI-assistant onboarding guide
 - `app/main.py`: FastAPI app factory and startup wiring
-- `app/api/routes/health.py`: health check endpoint
-- `app/api/routes/library.py`: document and folder ingestion routes
-- `app/api/routes/chat.py`: chat and streaming routes
+- `app/api/v1/endpoints/health.py`: health check endpoint
+- `app/api/v1/endpoints/library.py`: document and folder ingestion routes
+- `app/api/v1/endpoints/chat.py`: chat and streaming routes
 - `app/core/config.py`: environment-driven settings
+- `app/deps.py`: shared dependency helpers for routes
 - `app/db/connection.py`: DuckDB connection and bootstrap logic
+- `app/repositories/`: SQL-backed persistence layer
 - `app/services/library.py`: library ingestion and file management
 - `app/services/chat.py`: retrieval and answer orchestration
 - `app/services/ollama.py`: local model client

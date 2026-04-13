@@ -4,9 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import json
 from typing import Iterator
-from uuid import uuid4
 
-from app.db.connection import DatabaseManager
+from app.repositories.conversations import ConversationRepository
 from app.schemas.chat import (
     ChatConversationDetailResponse,
     ChatConversationListResponse,
@@ -66,59 +65,26 @@ class PreparedChatOutcome:
 class ChatService:
     def __init__(
         self,
-        database: DatabaseManager,
+        conversation_repository: ConversationRepository,
         library_service: LibraryService,
         ollama_client: OllamaClient,
     ) -> None:
-        self._database = database
+        self._conversations = conversation_repository
         self._library_service = library_service
         self._ollama_client = ollama_client
 
     def list_conversations(self) -> ChatConversationListResponse:
-        rows = self._database.fetchall(
-            """
-            SELECT
-                conversations.id,
-                conversations.title,
-                conversations.folder_names_json,
-                conversations.updated_at,
-                COALESCE(message_counts.message_count, 0) AS message_count,
-                latest_messages.content
-            FROM chat_conversations AS conversations
-            LEFT JOIN (
-                SELECT conversation_id, COUNT(*) AS message_count
-                FROM chat_messages
-                GROUP BY conversation_id
-            ) AS message_counts
-                ON message_counts.conversation_id = conversations.id
-            LEFT JOIN (
-                SELECT ranked.conversation_id, ranked.content
-                FROM (
-                    SELECT
-                        conversation_id,
-                        content,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY conversation_id
-                            ORDER BY sort_index DESC
-                        ) AS row_number
-                    FROM chat_messages
-                ) AS ranked
-                WHERE ranked.row_number = 1
-            ) AS latest_messages
-                ON latest_messages.conversation_id = conversations.id
-            ORDER BY conversations.updated_at DESC, conversations.created_at DESC
-            """
-        )
+        rows = self._conversations.list_conversations()
 
         return ChatConversationListResponse(
             conversations=[
                 ChatConversationSummary(
-                    id=str(row[0]),
-                    title=str(row[1]),
-                    folder_names=self._parse_folder_names(row[2]),
-                    updated_at=self._serialize_timestamp(row[3]),
-                    message_count=int(row[4]),
-                    preview=str(row[5]) if row[5] else None,
+                    id=row.conversation_id,
+                    title=row.title,
+                    folder_names=self._parse_folder_names(row.folder_names_json),
+                    updated_at=self._serialize_timestamp(row.updated_at),
+                    message_count=row.message_count,
+                    preview=row.preview,
                 )
                 for row in rows
             ]
@@ -128,93 +94,38 @@ class ChatService:
         self,
         conversation_id: str,
     ) -> ChatConversationDetailResponse | None:
-        conversation_row = self._database.fetchone(
-            """
-            SELECT
-                conversations.id,
-                conversations.title,
-                conversations.folder_names_json,
-                conversations.updated_at,
-                COALESCE(message_counts.message_count, 0) AS message_count,
-                latest_messages.content
-            FROM chat_conversations AS conversations
-            LEFT JOIN (
-                SELECT conversation_id, COUNT(*) AS message_count
-                FROM chat_messages
-                GROUP BY conversation_id
-            ) AS message_counts
-                ON message_counts.conversation_id = conversations.id
-            LEFT JOIN (
-                SELECT ranked.conversation_id, ranked.content
-                FROM (
-                    SELECT
-                        conversation_id,
-                        content,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY conversation_id
-                            ORDER BY sort_index DESC
-                        ) AS row_number
-                    FROM chat_messages
-                ) AS ranked
-                WHERE ranked.row_number = 1
-            ) AS latest_messages
-                ON latest_messages.conversation_id = conversations.id
-            WHERE conversations.id = ?
-            """,
-            [conversation_id],
-        )
+        conversation_row = self._conversations.get_conversation(conversation_id)
         if conversation_row is None:
             return None
 
-        message_rows = self._database.fetchall(
-            """
-            SELECT
-                id,
-                role,
-                content,
-                meta,
-                sources_json,
-                created_at
-            FROM chat_messages
-            WHERE conversation_id = ?
-            ORDER BY sort_index ASC
-            """,
-            [conversation_id],
-        )
+        message_rows = self._conversations.list_messages(conversation_id)
 
         conversation = ChatConversationSummary(
-            id=str(conversation_row[0]),
-            title=str(conversation_row[1]),
-            folder_names=self._parse_folder_names(conversation_row[2]),
-            updated_at=self._serialize_timestamp(conversation_row[3]),
-            message_count=int(conversation_row[4]),
-            preview=str(conversation_row[5]) if conversation_row[5] else None,
+            id=conversation_row.conversation_id,
+            title=conversation_row.title,
+            folder_names=self._parse_folder_names(conversation_row.folder_names_json),
+            updated_at=self._serialize_timestamp(conversation_row.updated_at),
+            message_count=conversation_row.message_count,
+            preview=conversation_row.preview,
         )
         messages = [
             ChatMessage(
-                id=str(row[0]),
-                role=str(row[1]),
-                content=str(row[2]),
-                meta=str(row[3]) if row[3] else None,
+                id=row.message_id,
+                role=row.role,
+                content=row.content,
+                meta=row.meta,
                 sources=[
                     ChatSource(**source_payload)
-                    for source_payload in json.loads(str(row[4]) or "[]")
+                    for source_payload in json.loads(row.sources_json)
                 ],
-                created_at=self._serialize_timestamp(row[5]),
+                created_at=self._serialize_timestamp(row.created_at),
             )
             for row in message_rows
         ]
         return ChatConversationDetailResponse(conversation=conversation, messages=messages)
 
     def delete_conversation(self, conversation_id: str) -> ChatConversationListResponse:
-        self._database.execute(
-            "DELETE FROM chat_messages WHERE conversation_id = ?",
-            [conversation_id],
-        )
-        self._database.execute(
-            "DELETE FROM chat_conversations WHERE id = ?",
-            [conversation_id],
-        )
+        self._conversations.delete_conversation(conversation_id)
         return self.list_conversations()
 
     def answer_question(
@@ -732,30 +643,19 @@ class ChatService:
         if not conversation_id:
             return None
 
-        existing = self._database.fetchone(
-            """
-            SELECT id, title, folder_names_json
-            FROM chat_conversations
-            WHERE id = ?
-            """,
-            [conversation_id],
-        )
+        existing = self._conversations.get_conversation_record(conversation_id)
         if existing is None:
             return None
 
-        stored_folders = self._parse_folder_names(existing[2])
+        stored_folders = self._parse_folder_names(existing.folder_names_json)
         effective_folders = folder_names or stored_folders
-        self._database.execute(
-            """
-            UPDATE chat_conversations
-            SET folder_names_json = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            [json.dumps(effective_folders), conversation_id],
+        self._conversations.update_conversation_folders(
+            conversation_id,
+            json.dumps(effective_folders),
         )
         return ConversationRecord(
-            conversation_id=str(existing[0]),
-            title=str(existing[1]),
+            conversation_id=existing.conversation_id,
+            title=existing.title,
             folder_names=effective_folders,
         )
 
@@ -765,48 +665,30 @@ class ChatService:
         question: str,
         folder_names: list[str],
     ) -> ConversationRecord:
-        new_conversation_id = str(uuid4())
         title = self._build_title(question)
-        self._database.execute(
-            """
-            INSERT INTO chat_conversations (id, title, folder_names_json)
-            VALUES (?, ?, ?)
-            """,
-            [new_conversation_id, title, json.dumps(folder_names)],
+        conversation = self._conversations.create_conversation(
+            title=title,
+            folder_names_json=json.dumps(folder_names),
         )
         return ConversationRecord(
-            conversation_id=new_conversation_id,
-            title=title,
+            conversation_id=conversation.conversation_id,
+            title=conversation.title,
             folder_names=folder_names,
         )
 
     def _get_conversation_messages(self, conversation_id: str) -> list[ChatMessage]:
-        rows = self._database.fetchall(
-            """
-            SELECT
-                id,
-                role,
-                content,
-                meta,
-                sources_json,
-                created_at
-            FROM chat_messages
-            WHERE conversation_id = ?
-            ORDER BY sort_index ASC
-            """,
-            [conversation_id],
-        )
+        rows = self._conversations.list_messages(conversation_id)
         return [
             ChatMessage(
-                id=str(row[0]),
-                role=str(row[1]),
-                content=str(row[2]),
-                meta=str(row[3]) if row[3] else None,
+                id=row.message_id,
+                role=row.role,
+                content=row.content,
+                meta=row.meta,
                 sources=[
                     ChatSource(**source_payload)
-                    for source_payload in json.loads(str(row[4]) or "[]")
+                    for source_payload in json.loads(row.sources_json)
                 ],
-                created_at=self._serialize_timestamp(row[5]),
+                created_at=self._serialize_timestamp(row.created_at),
             )
             for row in rows
         ]
@@ -830,46 +712,12 @@ class ChatService:
         meta: str | None = None,
         sources: list[ChatSource] | None = None,
     ) -> None:
-        next_sort_index_row = self._database.fetchone(
-            """
-            SELECT COALESCE(MAX(sort_index), -1) + 1
-            FROM chat_messages
-            WHERE conversation_id = ?
-            """,
-            [conversation_id],
-        )
-        next_sort_index = int(next_sort_index_row[0]) if next_sort_index_row else 0
-        serialized_sources = json.dumps(self._serialize_sources(sources or []))
-        self._database.execute(
-            """
-            INSERT INTO chat_messages (
-                id,
-                conversation_id,
-                role,
-                content,
-                meta,
-                sources_json,
-                sort_index
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                str(uuid4()),
-                conversation_id,
-                role,
-                content,
-                meta,
-                serialized_sources,
-                next_sort_index,
-            ],
-        )
-        self._database.execute(
-            """
-            UPDATE chat_conversations
-            SET updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            [conversation_id],
+        self._conversations.append_message(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            meta=meta,
+            sources_json=json.dumps(self._serialize_sources(sources or [])),
         )
 
     def _build_history_block(self, messages: list[ChatMessage]) -> str:

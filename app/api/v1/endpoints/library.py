@@ -1,9 +1,10 @@
 from pathlib import Path
-
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
 from urllib.parse import unquote
 
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+
+from app.deps import LibraryServiceDep
 from app.schemas.library import FolderListResponse, FolderSyncResponse
 from app.services.library import IngestFile
 
@@ -11,18 +12,18 @@ router = APIRouter(prefix="/api/library", tags=["library"])
 
 
 @router.get("/folders", response_model=FolderListResponse)
-async def list_folders(request: Request) -> FolderListResponse:
-    return request.app.state.library_service.list_folders()
+async def list_folders(library_service: LibraryServiceDep) -> FolderListResponse:
+    return library_service.list_folders()
 
 
 @router.post("/examples/sync", response_model=FolderSyncResponse)
-async def sync_examples(request: Request) -> FolderSyncResponse:
-    return request.app.state.library_service.sync_example_files()
+async def sync_examples(library_service: LibraryServiceDep) -> FolderSyncResponse:
+    return library_service.sync_example_files()
 
 
 @router.post("/folders/upload", response_model=FolderSyncResponse)
 async def upload_folder(
-    request: Request,
+    library_service: LibraryServiceDep,
     files: list[UploadFile] = File(...),
 ) -> FolderSyncResponse:
     ingest_files: list[IngestFile] = []
@@ -38,17 +39,23 @@ async def upload_folder(
             )
         )
 
-    return request.app.state.library_service.sync_browser_uploads(ingest_files)
+    return library_service.sync_browser_uploads(ingest_files)
 
 
 @router.delete("/documents/{document_id}", response_model=FolderListResponse)
-async def delete_document(document_id: str, request: Request) -> FolderListResponse:
-    return request.app.state.library_service.remove_document(document_id)
+async def delete_document(
+    document_id: str,
+    library_service: LibraryServiceDep,
+) -> FolderListResponse:
+    return library_service.remove_document(document_id)
 
 
 @router.get("/documents/{document_id}/file")
-async def open_document_file(document_id: str, request: Request) -> FileResponse:
-    document = request.app.state.library_service.get_document_file(document_id)
+async def open_document_file(
+    document_id: str,
+    library_service: LibraryServiceDep,
+) -> FileResponse:
+    document = library_service.get_document_file(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document file not found.")
 
@@ -60,5 +67,8 @@ async def open_document_file(document_id: str, request: Request) -> FileResponse
 
 
 @router.delete("/folders/{folder_name}", response_model=FolderListResponse)
-async def clear_folder(folder_name: str, request: Request) -> FolderListResponse:
-    return request.app.state.library_service.clear_folder(unquote(folder_name))
+async def clear_folder(
+    folder_name: str,
+    library_service: LibraryServiceDep,
+) -> FolderListResponse:
+    return library_service.clear_folder(unquote(folder_name))

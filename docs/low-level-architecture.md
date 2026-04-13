@@ -95,44 +95,22 @@ flowchart TB
 ## Proposed Repo / Package Layout
 
 ```text
-frontend/
-  src/
-    app/
-      App.tsx
-      routes.tsx
-      providers/
-    features/
-      setup/
-        FolderPicker.tsx
-        UploadQueue.tsx
-      ingestion/
-        IngestionStatusPage.tsx
-        JobProgressPanel.tsx
-      query/
-        QueryPage.tsx
-        AnswerCard.tsx
-        CitationList.tsx
-        EvidenceDrawer.tsx
-        CalculationTrace.tsx
-      documents/
-        DocumentTable.tsx
-      settings/
-        SettingsPage.tsx
-    lib/
-      api.ts
-      sse.ts
-      fileManifest.ts
-      schema.ts
-
-backend/
+root/
+  AGENTS.md
+  README.md
+  docs/
+  ai/
+    skills/
+    prompts/
   app/
-    main.py
     api/
-      routers/
-        ingestion.py
-        query.py
-        documents.py
-        system.py
+      v1/
+        endpoints/
+          ingestion.py
+          query.py
+          documents.py
+          system.py
+        api.py
     core/
       config.py
       logging.py
@@ -140,14 +118,16 @@ backend/
     db/
       connection.py
       migrations/
-    models/
-      dto/
-      enums.py
     repositories/
       documents.py
       jobs.py
       queries.py
       facts.py
+    schemas/
+      ingestion.py
+      query.py
+      documents.py
+      system.py
     services/
       ingestion/
         job_service.py
@@ -175,9 +155,27 @@ backend/
         prompt_builder.py
         answer_service.py
         response_validator.py
-    workers/
-      ingestion_worker.py
+    deps.py
+    main.py
+  tests/
+  sibling-ui-repo/
+    src/
+      features/
+        setup/
+        ingestion/
+        query/
+        documents/
+        settings/
+      lib/
 ```
+
+Notes for contributors:
+
+- `AGENTS.md` should hold project-wide standards for humans and AI assistants.
+- `ai/skills/` and `ai/prompts/` are optional productivity layers and should never be required for app runtime.
+- `repositories/` is preferred over `models/` for the current DuckDB-plus-SQL design.
+- `api/v1` is the intended shape once the public contract stabilizes beyond the current MVP.
+- the frontend remains a sibling repository, so backend docs should describe that relationship instead of implying a monorepo that does not exist today.
 
 ## Frontend Module Responsibilities
 

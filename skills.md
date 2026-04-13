@@ -37,7 +37,10 @@ Build a trustworthy local-first API for document ingestion, retrieval, fact extr
 
 - `app/api/`: HTTP layer only
 - `app/core/`: shared config and application wiring
+- `app/deps.py`: dependency wiring for routes and request-time services
+- `app/repositories/`: persistence and SQL logic
 - `app/schemas/`: request and response contracts
+- `app/services/`: orchestration, AI logic, and file processing
 - `tests/`: smoke tests and API contract tests
 - `docs/`: human and AI onboarding context
 
